@@ -5,8 +5,6 @@
 #include <math.h>
 
 #include "./c/init.h"
-
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 /// utils
@@ -203,6 +201,26 @@ void vec2_vertex(Vec2 self) {
 /// lib
 
 
+typedef union {
+	struct { Vec2 position, scale; };
+	struct { f32 x, y, w, h; };
+} Rectangle;
+
+static_assert(sizeof(Rectangle) == sizeof(Vec2) * 2);
+
+Rectangle rectangle_of(f32 x, f32 y, f32 w, f32 h) {
+	return (Rectangle){ .x = x, .y = y, .w = w, .h = h };
+}
+
+Rectangle rectangle_add(Rectangle self, Rectangle other) {
+	return rectangle_of(
+		self.x + other.x,
+		self.y + other.y,
+		self.w + other.w,
+		self.h + other.h
+	);
+}
+
 void triangle(Vec2 a, Vec2 b, Vec2 c, Color color) {
 	color_set(color);
 
@@ -215,15 +233,15 @@ void triangle(Vec2 a, Vec2 b, Vec2 c, Color color) {
 	glEnd();
 }
 
-void rectangle(Vec2 position, Vec2 scale, Color color) {
+void rectangle(Rectangle rect, Color color) {
 	color_set(color);
 
 	glBegin(GL_QUADS);
 
-	vec2_vertex(position);
-	vec2_vertex(vec2_add(position, vec2_of(scale.x, 0)));
-	vec2_vertex(vec2_add(position, scale));
-	vec2_vertex(vec2_add(position, vec2_of(0, scale.y)));
+	vec2_vertex(rect.position);
+	vec2_vertex(vec2_add(rect.position, vec2_of(rect.scale.x, 0)));
+	vec2_vertex(vec2_add(rect.position, rect.scale));
+	vec2_vertex(vec2_add(rect.position, vec2_of(0, rect.scale.y)));
 
 	glEnd();
 }
@@ -239,7 +257,7 @@ void polygon(Vec2s_View points, Color color) {
 	glEnd();
 }
 
-void texture(const char *texture_path, Vec2 position, Vec2 scale, Color color) {
+void texture(const char *texture_path, Rectangle rect, Color color) {
 	Texture texture = texture_load_from_path(texture_path);
 
 	glBindTexture(GL_TEXTURE_2D, texture.id);
@@ -247,10 +265,10 @@ void texture(const char *texture_path, Vec2 position, Vec2 scale, Color color) {
 
 	glBegin(GL_QUADS);
 
-	glTexCoord2f(0, 0); vec2_vertex(position);
-	glTexCoord2f(1, 0); vec2_vertex(vec2_add(position, vec2_of(scale.x, 0)));
-	glTexCoord2f(1, 1); vec2_vertex(vec2_add(position, scale));
-	glTexCoord2f(0, 1); vec2_vertex(vec2_add(position, vec2_of(0, scale.y)));
+	glTexCoord2f(0, 0); vec2_vertex(rect.position);
+	glTexCoord2f(1, 0); vec2_vertex(vec2_add(rect.position, vec2_of(rect.scale.x, 0)));
+	glTexCoord2f(1, 1); vec2_vertex(vec2_add(rect.position, rect.scale));
+	glTexCoord2f(0, 1); vec2_vertex(vec2_add(rect.position, vec2_of(0, rect.scale.y)));
 
 	glEnd();
 
@@ -272,7 +290,7 @@ void circle(Vec2 center, f64 radius, u8 resolution, Color color) {
 	glEnd();
 }
 
-void character(char c, Vec2 position, Vec2 scale, Color color) {
+void character(char c, Rectangle rect, Color color) {
 	Texture texture = texture_load_from_path("./text.png");
 
 	u64 sw = 5; // width in pixels per char
@@ -297,25 +315,28 @@ void character(char c, Vec2 position, Vec2 scale, Color color) {
 
 	glBegin(GL_QUADS);
 
-	glTexCoord2f(fx, fy); vec2_vertex(position);
-	glTexCoord2f(fxn, fy); vec2_vertex(vec2_add(position, vec2_of(scale.x, 0)));
-	glTexCoord2f(fxn, fyn); vec2_vertex(vec2_add(position, scale));
-	glTexCoord2f(fx, fyn); vec2_vertex(vec2_add(position, vec2_of(0, scale.y)));
+	glTexCoord2f(fx, fy); vec2_vertex(rect.position);
+	glTexCoord2f(fxn, fy); vec2_vertex(vec2_add(rect.position, vec2_of(rect.scale.x, 0)));
+	glTexCoord2f(fxn, fyn); vec2_vertex(vec2_add(rect.position, rect.scale));
+	glTexCoord2f(fx, fyn); vec2_vertex(vec2_add(rect.position, vec2_of(0, rect.scale.y)));
 
 	glEnd();
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void text(Strv str, Vec2 position, Vec2 scale, Color color) {
-	Vec2 scale_item = vec2_scale(scale, 1. / str.length);
+void text(Strv str, Rectangle rect, Color color) {
+	Vec2 scale_item = vec2_scale(rect.scale, 1. / str.length);
 
 	for (usize i = 0; i < str.length; i++) {
 		char it = *slice_at(&str, i);
+		Rectangle r = {
+			.position = vec2_add(rect.position, vec2_of(i * scale_item.x, 0)),
+			.scale = scale_item,
+		};
 		character(
 			it,
-			vec2_add(position, vec2_of(i * scale_item.x, 0)),
-			scale_item,
+			r,
 			color
 		);
 	}
@@ -361,12 +382,11 @@ int main(void) {
 		glClearColor(0.0, 0.0, 0.0, 0.0);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-
 		if (1) {
 			circle(vec2_of(.5, .5), 0.2, 30, RED);
-			rectangle(vec2_of(.1, .05), vec2_of(.2, .6), BLUE);
-			texture("./bomb.png", vec2_of(1.05, .5), vec2_of(-.5, .5), WHITE);
-			texture("./mole.png", vec2_of(.7, .1), vec2_of(-.2, .2),
+			rectangle(rectangle_of(.1, .05, .2, .6), BLUE);
+			texture("./bomb.png", rectangle_of(1.05, .5, -.5, .5), WHITE);
+			texture("./mole.png", rectangle_of(.7, .1, -.2, .2),
 			        color_hsv(0, mole_value, 1, 1));
 			polygon(
 				SLICE_OF(Vec2s_View,
@@ -383,10 +403,10 @@ int main(void) {
 		}
 
 		// texture("./text.png", vec2_of(.5, .5), vec2_of(.5, .5), WHITE);
-		character('\0', vec2_of(.5, .5), vec2_of(.3, .3), WHITE);
-		text(STRV("ola"), vec2_of(0, 0), vec2_of(.3, .3), WHITE);
-		text(STRV("mundo"), vec2_of(0, .1), vec2_of(.4, .4), WHITE);
-		text(STRV("dddd"), vec2_of(0, .2), vec2_of(.2, .2), WHITE);
+		character('\0', rectangle_of(.5, .5, .3, .3), WHITE);
+		text(STRV("ola"), rectangle_of(0, 0, .3, .3), WHITE);
+		text(STRV("mundo"), rectangle_of(0, .1, .4, .4), WHITE);
+		text(STRV("dddd"), rectangle_of(0, .2, .2, .2), WHITE);
 
 		glFlush();
 		glfwSwapBuffers(window);
