@@ -4,7 +4,8 @@
 #include <string.h>
 #include <math.h>
 
-#include "./c/init.h"
+#define LIB_IMPLEMENTATION
+#include "./c/build/lib.h"
 #include "stb_image.h"
 
 /// utils
@@ -21,12 +22,6 @@ static bool streq(const char **a, const char **b) {
 /// globals
 
 Allocator al;
-
-/// str
-
-typedef Chars_View Strv;
-
-#define STRV(LIT) ((Strv){.items = (LIT), .length = sizeof((LIT)) - 1})
 
 /// color
 
@@ -257,7 +252,9 @@ void polygon(Vec2s_View points, Color color) {
 	glEnd();
 }
 
-void texture(const char *texture_path, Rectangle rect, Color color) {
+void texture(const char *texture_path,
+             Rectangle rect, Rectangle source,
+             Color color) {
 	Texture texture = texture_load_from_path(texture_path);
 
 	glBindTexture(GL_TEXTURE_2D, texture.id);
@@ -265,10 +262,14 @@ void texture(const char *texture_path, Rectangle rect, Color color) {
 
 	glBegin(GL_QUADS);
 
-	glTexCoord2f(0, 0); vec2_vertex(rect.position);
-	glTexCoord2f(1, 0); vec2_vertex(vec2_add(rect.position, vec2_of(rect.scale.x, 0)));
-	glTexCoord2f(1, 1); vec2_vertex(vec2_add(rect.position, rect.scale));
-	glTexCoord2f(0, 1); vec2_vertex(vec2_add(rect.position, vec2_of(0, rect.scale.y)));
+	glTexCoord2f(source.x, source.y);
+	vec2_vertex(rect.position);
+	glTexCoord2f(source.w, source.y);
+	vec2_vertex(vec2_add(rect.position, vec2_of(rect.scale.x, 0)));
+	glTexCoord2f(source.w, source.h);
+	vec2_vertex(vec2_add(rect.position, rect.scale));
+	glTexCoord2f(source.x, source.h);
+	vec2_vertex(vec2_add(rect.position, vec2_of(0, rect.scale.y)));
 
 	glEnd();
 
@@ -291,38 +292,28 @@ void circle(Vec2 center, f64 radius, u8 resolution, Color color) {
 }
 
 void character(char c, Rectangle rect, Color color) {
-	Texture texture = texture_load_from_path("./text.png");
+	Texture t = texture_load_from_path("./text.png");
 
 	u64 sw = 5; // width in pixels per char
 	u64 sh = 8; // heigth in pixels per char
 
-	u64 w = texture.width / sw;
-	u64 h = texture.height / sh;
+	u64 w = t.width / sw;
+	u64 h = t.height / sh;
 
 	u64 x = (c % w) * sw;
 	u64 y = (c / h) * sh;
 
-	u64 xn = x + sw;
-	u64 yn = y + sh;
-
-	f64 fx = (f64)x / texture.width;
-	f64 fy = (f64)y / texture.height;
-	f64 fxn = (f64)xn / texture.width;
-	f64 fyn = (f64)yn / texture.height;
-
-	glBindTexture(GL_TEXTURE_2D, texture.id);
-	color_set(color);
-
-	glBegin(GL_QUADS);
-
-	glTexCoord2f(fx, fy); vec2_vertex(rect.position);
-	glTexCoord2f(fxn, fy); vec2_vertex(vec2_add(rect.position, vec2_of(rect.scale.x, 0)));
-	glTexCoord2f(fxn, fyn); vec2_vertex(vec2_add(rect.position, rect.scale));
-	glTexCoord2f(fx, fyn); vec2_vertex(vec2_add(rect.position, vec2_of(0, rect.scale.y)));
-
-	glEnd();
-
-	glBindTexture(GL_TEXTURE_2D, 0);
+	texture(
+		"./text.png",
+		rect,
+		rectangle_of(
+			(f64)x / t.width,
+			(f64)y / t.height,
+			(f64)(x + sw) / t.width,
+			(f64)(y + sh) / t.height
+		),
+		color
+	);
 }
 
 void text(Strv str, Rectangle rect, Color color) {
@@ -382,11 +373,12 @@ int main(void) {
 		glClearColor(0.0, 0.0, 0.0, 0.0);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		if (1) {
+		if (false) {
+			Rectangle source_all = rectangle_of(0, 0, 1, 1);
 			circle(vec2_of(.5, .5), 0.2, 30, RED);
-			rectangle(rectangle_of(.1, .05, .2, .6), BLUE);
-			texture("./bomb.png", rectangle_of(1.05, .5, -.5, .5), WHITE);
-			texture("./mole.png", rectangle_of(.7, .1, -.2, .2),
+
+			texture("./bomb.png", rectangle_of(1.05, .5, -.5, .5), source_all, WHITE);
+			texture("./mole.png", rectangle_of(.7, .1, -.2, .2), source_all,
 			        color_hsv(0, mole_value, 1, 1));
 			polygon(
 				SLICE_OF(Vec2s_View,
@@ -398,15 +390,21 @@ int main(void) {
 				         vec2_of(.3, .7)),
 				color_hsv(triangle_hue, 1, .8, .4)
 			);
-			triangle(vec2_of(.4, 0), vec2_of(.6, .5), vec2_of(.2, .5),
+
+			triangle(vec2_of(.4, 0), vec2_of(.4, .5), vec2_of(.2, .5),
 			         color_alpha(YELLOW, 0xff*.5));
+			rectangle(rectangle_of(.1, .05, .2, .6), color_alpha(BLUE, 0xff*.3));
+
+			rectangle(rectangle_of(.7, .05, .2, .6), color_alpha(BLUE, 0xff*.3));
+			triangle(vec2_of(.6, 0), vec2_of(.8, .5), vec2_of(.6, .5),
+			         color_alpha(YELLOW, 0xff*.5));
+
+			text(STRV("ola"), rectangle_of(.04, 0, .3, .3), WHITE);
+			text(STRV("mundo"), rectangle_of(.04, .1, .4, .4), WHITE);
+			text(STRV("ABCD"), rectangle_of(.04, .2, .95, 1), WHITE);
 		}
 
-		// texture("./text.png", vec2_of(.5, .5), vec2_of(.5, .5), WHITE);
-		character('\0', rectangle_of(.5, .5, .3, .3), WHITE);
-		text(STRV("ola"), rectangle_of(0, 0, .3, .3), WHITE);
-		text(STRV("mundo"), rectangle_of(0, .1, .4, .4), WHITE);
-		text(STRV("dddd"), rectangle_of(0, .2, .2, .2), WHITE);
+		text(STRV(":)"), rectangle_of(.7, .05, .2, .6), WHITE);
 
 		glFlush();
 		glfwSwapBuffers(window);
